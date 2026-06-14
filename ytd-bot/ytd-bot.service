@@ -1,0 +1,17 @@
+[Unit]
+Description=YT Download Bot — download YouTube videos via Telegram
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/apollo/ytd-bot
+EnvironmentFile=/home/apollo/ytd-bot/.env
+ExecStart=/home/apollo/ytd-bot/bot.py
+Restart=on-failure
+RestartSec=5
+RestartMode=direct
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

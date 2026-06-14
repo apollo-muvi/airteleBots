@@ -1,0 +1,34 @@
+# ── Secrets ──
+.env
+**/.env
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ── Runtime data ──
+data/
+*.db
+
+# ── Google API tokens ──
+token.json
+credentials.json
+*.pickle
+
+# ── IDE / OS ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Hermes ──
+.hermes/

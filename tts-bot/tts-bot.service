@@ -1,0 +1,15 @@
+[Unit]
+Description=TTS Telegram Bot (edge-tts)
+After=network.target
+
+[Service]
+Type=simple
+User=apollo
+WorkingDirectory=/home/apollo/tts-bot
+Environment=PATH=/home/apollo/tts-bot/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/apollo/tts-bot/venv/bin/python /home/apollo/tts-bot/tts-bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

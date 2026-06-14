@@ -34,5 +34,5 @@ Thumbs.db
 .hermes/
 
 # ── Symlinked venvs (point to original locations) ──
-venv/
-.venv/
+*venv
+*.venv

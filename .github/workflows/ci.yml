@@ -123,3 +123,10 @@ jobs:
             fi
           done
           [ "$errors" -eq 0 ] || exit 1
+
+      # 6. Unit tests
+      - name: Unit tests
+        if: steps.skip.outputs.changed == 'true'
+        run: |
+          pip install pytest
+          python -m pytest tests/ -v --tb=short

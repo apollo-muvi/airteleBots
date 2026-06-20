@@ -9,16 +9,10 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, arm64]
     steps:
       - uses: actions/checkout@v4
 
-      - name: SSH Deploy to Pi
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            bash /home/apollo/airteleBots/.github/scripts/deploy.sh
+      - name: Deploy bots
+        run: |
+          bash /home/apollo/airteleBots/.github/scripts/deploy.sh

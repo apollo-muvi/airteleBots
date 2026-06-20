@@ -2,6 +2,7 @@
 # ─────────────────────────────────────────────────────────
 # CD Deploy Script — AirteleBots
 # Pulls latest code and restarts changed bot services.
+# Triggered by GitHub Actions CD workflow via SSH.
 #
 # Usage: bash .github/scripts/deploy.sh
 # ─────────────────────────────────────────────────────────

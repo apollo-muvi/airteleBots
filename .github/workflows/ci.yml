@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ─── Detect which bot(s) changed ─────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ytd:       ${{ steps.filter.outputs.ytd }}
+      know:      ${{ steps.filter.outputs.know }}
+      volcabu:   ${{ steps.filter.outputs.volcabu }}
+      apolloew:  ${{ steps.filter.outputs.apolloew }}
+      translate: ${{ steps.filter.outputs.translate }}
+      shadow:    ${{ steps.filter.outputs.shadow }}
+      tts:       ${{ steps.filter.outputs.tts }}
+      any:       ${{ steps.filter.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ytd:
+              - 'ytd-bot/**'
+            know:
+              - 'know-bot/**'
+            volcabu:
+              - 'volcabu-bot/**'
+            apolloew:
+              - 'apolloew-bot/**'
+            translate:
+              - 'translate-bot/**'
+            shadow:
+              - 'yt-shadow-bot/**'
+            tts:
+              - 'tts-bot/**'
+
+  # ─── CI per bot ──────────────────────────────────────────────
+  # Matrix runs all 7 variants; each variant checks if its own
+  # bot changed.  Unchanged bots skip via early-exit step.
+  build:
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
+    strategy:
+      matrix:
+        bot: [ytd, know, volcabu, apolloew, translate, shadow, tts]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Early exit if this bot didn't change ──
+      - name: Skip if unchanged
+        id: skip
+        run: |
+          echo "changed=${{ needs.changes.outputs[matrix.bot] }}" >> "$GITHUB_OUTPUT"
+
+      # ── Only run rest if the bot actually changed ──
+      - uses: actions/setup-python@v5
+        if: steps.skip.outputs.changed == 'true'
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: '*/requirements.txt'
+
+      - name: Resolve bot metadata
+        if: steps.skip.outputs.changed == 'true'
+        id: meta
+        run: |
+          case ${{ matrix.bot }} in
+            ytd)       dir="ytd-bot";       entry="bot.py"     ;;
+            know)      dir="know-bot";      entry="main.py"    ;;
+            volcabu)   dir="volcabu-bot";   entry="bot.py"     ;;
+            apolloew)  dir="apolloew-bot";  entry="bot.py"     ;;
+            translate) dir="translate-bot"; entry="bot.py"     ;;
+            shadow)    dir="yt-shadow-bot"; entry="bot.py"     ;;
+            tts)       dir="tts-bot";       entry="tts-bot.py" ;;
+          esac
+          echo "dir=$dir"     >> "$GITHUB_OUTPUT"
+          echo "entry=$entry" >> "$GITHUB_OUTPUT"
+
+      # 1. Lint (ruff)
+      - name: Lint
+        if: steps.skip.outputs.changed == 'true'
+        run: |
+          pip install ruff
+          ruff check ${{ steps.meta.outputs.dir }}/
+
+      # 2. Security scan
+      - name: Security scan
+        if: steps.skip.outputs.changed == 'true'
+        run: bash .github/scripts/security-scan.sh ${{ steps.meta.outputs.dir }}/
+
+      # 3. Install dependencies
+      - name: Install dependencies
+        if: steps.skip.outputs.changed == 'true'
+        run: pip install -r ${{ steps.meta.outputs.dir }}/requirements.txt
+
+      # 4. Syntax check
+      - name: Syntax check
+        if: steps.skip.outputs.changed == 'true'
+        run: python -m py_compile ${{ steps.meta.outputs.dir }}/${{ steps.meta.outputs.entry }}
+
+      # 5. Structure check (run.sh + .env.example)
+      - name: Structure check
+        if: steps.skip.outputs.changed == 'true'
+        run: |
+          errors=0
+          for f in run.sh .env.example; do
+            if [ ! -f "${{ steps.meta.outputs.dir }}/$f" ]; then
+              echo "❌ Missing: ${{ steps.meta.outputs.dir }}/$f"
+              errors=$((errors+1))
+            else
+              echo "✅ ${{ steps.meta.outputs.dir }}/$f"
+            fi
+          done
+          [ "$errors" -eq 0 ] || exit 1

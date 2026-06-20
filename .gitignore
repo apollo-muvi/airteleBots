@@ -35,4 +35,4 @@ Thumbs.db
 
 # ── Symlinked venvs (point to original locations) ──
 *venv
-*.venv
+*.venv*.part

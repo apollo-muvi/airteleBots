@@ -40,3 +40,9 @@ def dump():
         "ALLOWED_USERS": ALLOWED_USERS,
         "ALLOW_ALL": ALLOW_ALL,
     }, indent=2)
+
+# ── Local LLM on Idea3 (192.168.20.154) ──
+LOCAL_LLM_BASE = os.getenv('LOCAL_LLM_BASE', 'http://192.168.20.154:11434/v1')
+LOCAL_LLM_API_KEY = os.getenv('LOCAL_LLM_API_KEY', 'ollama')
+LOCAL_LLM_MODEL = os.getenv('LOCAL_LLM_MODEL', 'hermes-local')
+LOCAL_LLM_ENABLED = os.getenv('LOCAL_LLM_ENABLED', 'true').lower() == 'true'

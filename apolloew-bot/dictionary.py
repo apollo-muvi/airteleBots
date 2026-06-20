@@ -5,6 +5,7 @@ import re
 import time
 from openai import OpenAI
 from config import HERMES_API_BASE, HERMES_API_KEY, HERMES_MODEL
+from config import LOCAL_LLM_BASE, LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_ENABLED
 
 # ── System prompt for structured dictionary output ──
 SYSTEM_PROMPT = """You are a professional English-Chinese dictionary like Cambridge Dictionary.
@@ -68,12 +69,46 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
+def query_local(word: str) -> dict | None:
+    """Try Idea3 local LLM first."""
+    if not LOCAL_LLM_ENABLED:
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=LOCAL_LLM_API_KEY, base_url=LOCAL_LLM_BASE)
+        response = client.chat.completions.create(
+            model=LOCAL_LLM_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": word.strip()},
+            ],
+            temperature=0.2,
+            max_tokens=1200,
+            timeout=60,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            return None
+        data = _extract_json(content)
+        if data and "results" in data and isinstance(data["results"], list):
+            data["_source"] = "Idea3"
+            return data
+        return None
+    except Exception as e:
+        print(f"[dictionary] Local LLM failed for '{word}': {e}")
+        return None
+
+
 def query(word: str, max_retries: int = 2) -> dict | None:
-    """Call Hermes API Server to look up a word.
-    
-    Returns parsed JSON dict, or None on all failures.
-    Retries once on parse failure.
-    """
+    """Try local LLM first, fall back to Hermes API."""
+    local_result = query_local(word)
+    if local_result:
+        return local_result
+    return _query_hermes(word, max_retries)
+
+
+def _query_hermes(word: str, max_retries: int = 2) -> dict | None:
+    """Call Hermes API Server to look up a word."""
     client = OpenAI(
         api_key=HERMES_API_KEY,
         base_url=HERMES_API_BASE,
@@ -116,6 +151,7 @@ def query(word: str, max_retries: int = 2) -> dict | None:
                     continue
                 raise ValueError("Response missing 'results' array")
 
+            data["_source"] = "OpenRouter"
             return data
 
         except Exception as e:

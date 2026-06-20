@@ -1,6 +1,7 @@
 """Telegram Bot handlers for the English Dictionary Bot."""
 
 import csv
+import json
 import io
 import os
 import re
@@ -73,6 +74,12 @@ def _format_word_response(data: dict) -> str:
     word_clean = data.get("word", "").lower()
     lines.append("")
     lines.append("🔊 發音：")
+
+    src = data.get("_source", "")
+    if src == "Idea3":
+        lines.append("─── 🖥️ Idea3")
+    elif src == "OpenRouter":
+        lines.append("─── ☁️ OpenRouter")
 
     return "\n".join(lines)
 
@@ -296,3 +303,141 @@ async def pronunciation_callback(update: Update, context: ContextTypes.DEFAULT_T
             title=f"{word} ({label})",
             performer="Google TTS",
         )
+# ── Group generation ──────────────────────────
+
+GROUP_PROMPT = """You are a professional English vocabulary teacher. Generate a JSON array of 5 English words related to the given category/topic.
+
+Return ONLY valid JSON with NO markdown, no code fences, no extra text. Each word must include:
+- word (capitalized)
+- part_of_speech
+- uk_phonetic (IPA)
+- us_phonetic (IPA)
+- definition_en
+- definition_zh (Traditional Chinese)
+- example_en
+- example_zh (Traditional Chinese translation)
+
+Format:
+{
+  "words": [
+    {
+      "word": "WORD",
+      "part_of_speech": "noun",
+      "uk_phonetic": "/.../",
+      "us_phonetic": "/.../",
+      "definition_en": "English definition",
+      "definition_zh": "繁體中文解釋",
+      "example_en": "Example sentence",
+      "example_zh": "例句翻譯"
+    }
+  ]
+}
+
+Choose 5 relevant, practical words. Each word must be different. Include natural example sentences."""
+
+
+def _extract_json(text: str) -> dict | None:
+    """Extract JSON from LLM response."""
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    text = re.sub(r'^```\w*\n?', '', text)
+    text = re.sub(r'\n?```$', '', text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start:end+1])
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _format_group(data: dict) -> str:
+    """Format word group as Telegram message."""
+    words = data.get("words", [])
+    if not words:
+        return None
+    lines = []
+    sep = "\n" + "─" * 30 + "\n"
+    for entry in words:
+        word = entry.get("word", "???")
+        pos = entry.get("part_of_speech", "")
+        uk = entry.get("uk_phonetic", "")
+        us = entry.get("us_phonetic", "")
+        def_en = entry.get("definition_en", "")
+        def_zh = entry.get("definition_zh", "")
+        ex_en = entry.get("example_en", "")
+        ex_zh = entry.get("example_zh", "")
+        pron = f"UK: {uk} | US: {us}" if uk else ""
+        lines.append(f"**📖 {word.capitalize()}**")
+        lines.append(f"▸ *[{pos}]* {pron}".strip())
+        if def_en:
+            lines.append(f"💡 En: {def_en}")
+        if def_zh:
+            lines.append(f"     繁中: {def_zh}")
+        if ex_en:
+            lines.append(f"📝 Ex: {ex_en}")
+        if ex_zh:
+            lines.append(f"     翻譯: {ex_zh}")
+        lines.append(sep)
+    return "\n".join(lines).strip()
+
+
+async def group_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /group command — generate 5 themed words."""
+    if not _is_authorized(update.effective_user.id):
+        return
+
+    topic = " ".join(context.args) if context.args else ""
+    if not topic:
+        await update.message.reply_text(
+            "⚠️ 請輸入主題，例如：\n`/group 機場`\n`/group 餐廳`\n`/group 天氣`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    waiting = await update.message.reply_text(f"🔍 正在產生「{topic}」相關單字...")
+
+    try:
+        import dictionary as dict_lib
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=dict_lib.HERMES_API_KEY,
+            base_url=dict_lib.HERMES_API_BASE,
+        )
+        response = client.chat.completions.create(
+            model=dict_lib.HERMES_MODEL,
+            messages=[
+                {"role": "system", "content": GROUP_PROMPT},
+                {"role": "user", "content": f"Generate 5 English words related to: {topic}"},
+            ],
+            temperature=0.5,
+            max_tokens=2000,
+            timeout=60,
+        )
+        content = response.choices[0].message.content
+        if not content:
+            await waiting.edit_text("❌ LLM 回覆為空，請稍後再試。")
+            return
+
+        data = _extract_json(content)
+        reply = _format_group(data) if data else None
+        if not reply:
+            await waiting.edit_text(
+                f"❌ 格式錯誤，請稍後再試。\n原始回覆：\n```\n{content[:500]}\n```",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+
+        await waiting.edit_text(reply, parse_mode=ParseMode.MARKDOWN)
+
+    except Exception as e:
+        await waiting.edit_text(f"❌ 錯誤：{e}")

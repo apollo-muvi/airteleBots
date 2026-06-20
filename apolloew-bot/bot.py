@@ -74,6 +74,13 @@ def _format_word_response(data: dict) -> str:
     lines.append("")
     lines.append("🔊 發音：")
 
+    # Source indicator
+    src = data.get("_source", "")
+    if src == "Idea3":
+        lines.append("─── 🖥️ Idea3")
+    elif src == "OpenRouter":
+        lines.append("─── ☁️ OpenRouter")
+
     return "\n".join(lines)
 
 

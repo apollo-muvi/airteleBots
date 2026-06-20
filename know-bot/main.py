@@ -23,6 +23,7 @@ import html_generator
 from html_generator import verify_formatting
 from content_fetcher import is_url, fetch_url_content, extract_domain, generate_article_id, extract_url
 import gdrive_sync
+from inference import ask_hermes
 
 # ── Auth ──
 
@@ -44,13 +45,16 @@ async def start(update: Update, context):
         "把我加入 Telegram 的「分享」選單，看到值得深入研究的內容就分享給我！\n\n"
         "🔹 *支援格式*\n"
         "  🔗 網頁連結 → 自動抓取標題 + 摘要 + 內文\n"
-        "  📝 純文字   → 直接儲存\n\n"
+        "  📝 純文字   → 直接儲存\n"
+        "  ❓ 技術問題 → `/ask` 自動推理更正並產出歸納\n\n"
         "🔹 *指令*\n"
         "  `/list`     — 最近儲存的知識\n"
         "  `/stats`    — 知識庫統計\n"
-        "  `/search`   — 搜尋知識庫（例如 `/search OpenClaw`）\n\n"
+        "  `/search`   — 搜尋知識庫（例如 `/search OpenClaw`）\n"
+        "  `/ask`      — 技術問答（例如 `/ask 什麼是 interface providers？`）\n\n"
         "🔹 *範例*\n"
-        "  分享一個網址給 bot → 自動存成精美 HTML + 同步到 Google Drive"
+        "  分享一個網址給 bot → 自動存成精美 HTML + 同步到 Google Drive\n"
+        "  或輸入 `/ask inference providers 跟 OpenAI 有什麼差別？`"
     )
     await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN)
 
@@ -305,6 +309,40 @@ async def search(update: Update, context):
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
 
+async def ask_handler(update: Update, context):
+    """Handle /ask — correct and answer a technical question via Hermes API."""
+    if not _is_authorized(update.effective_user.id):
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "⚠️ 請輸入你的問題\n"
+            "例如：`/ask 什麼是 interface providers？`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    question = " ".join(context.args)
+    waiting = await update.message.reply_text("🤔 推理中，請稍候...")
+
+    try:
+        answer = await ask_hermes(question)
+        # Telegram has a 4096 char limit per message
+        if len(answer) > 4000:
+            parts = [answer[i:i+4000] for i in range(0, len(answer), 4000)]
+            for i, part in enumerate(parts):
+                prefix = f"（{i+1}/{len(parts)}）\n\n" if len(parts) > 1 else ""
+                msg_text = prefix + part
+                if i == 0:
+                    await waiting.edit_text(msg_text, parse_mode=ParseMode.MARKDOWN)
+                else:
+                    await update.message.reply_text(msg_text, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await waiting.edit_text(answer, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        await waiting.edit_text(f"❌ 處理問題時發生錯誤：{str(e)[:200]}")
+
+
 # ── Main ──
 
 def main():
@@ -321,6 +359,7 @@ def main():
     app.add_handler(CommandHandler("list", list_articles))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("search", search))
+    app.add_handler(CommandHandler("ask", ask_handler))
 
     # Text handler — catch all text messages (URLs + plain text)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

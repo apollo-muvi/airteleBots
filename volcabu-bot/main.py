@@ -36,6 +36,7 @@ from bot import (
     stats,
     export_csv,
     pronunciation_callback,
+    group_words,
 )
 
 
@@ -56,6 +57,7 @@ def main():
     app.add_handler(CommandHandler("list", list_words))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("export", export_csv))
+    app.add_handler(CommandHandler("group", group_words))
 
     # Text handler (catch-all for single words) — must be after command handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_word))

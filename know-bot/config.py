@@ -30,6 +30,11 @@ GAPI_SCRIPT = os.path.expanduser("~/.hermes/skills/productivity/google-workspace
 # Content fetching
 MAX_CONTENT_CHARS = 50000  # max content length to store
 
+# Hermes API (for inference / correction)
+HERMES_API_URL = os.environ.get("HERMES_API_URL", "http://localhost:8642/v1")
+HERMES_API_KEY = os.environ.get("HERMES_API_KEY", "hermes-api-key-local")
+
+
 def dump():
     return json.dumps({
         "DATA_DIR": DATA_DIR,
@@ -39,3 +44,8 @@ def dump():
         "ALLOW_ALL": ALLOW_ALL,
         "ALLOWED_USERS": ALLOWED_USERS,
     }, indent=2, ensure_ascii=False)
+# ── Local LLM on Idea3 (192.168.20.154) ──
+LOCAL_LLM_BASE = os.getenv("LOCAL_LLM_BASE", "http://192.168.20.154:11434/v1")
+LOCAL_LLM_API_KEY = os.getenv("LOCAL_LLM_API_KEY", "ollama")
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "hermes-local")
+LOCAL_LLM_ENABLED = os.getenv("LOCAL_LLM_ENABLED", "true").lower() == "true"

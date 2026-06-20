@@ -30,10 +30,19 @@ def _is_authorized(user_id: int) -> bool:
 
 def _format_word_response(data: dict) -> str:
     """Format dictionary data as a nice Telegram message."""
-    word = data.get("word", "").upper()
+    word = data.get("word", "")
     lines = [f"📖 *{word}*\n"]
 
-    for i, item in enumerate(data.get("results", [])):
+    # Deduplicate results by definition_en
+    seen_defs = set()
+    unique_results = []
+    for item in data.get("results", []):
+        key = item.get("definition_en", "").strip().lower()
+        if key and key not in seen_defs:
+            seen_defs.add(key)
+            unique_results.append(item)
+
+    for i, item in enumerate(unique_results):
         pos = item.get("part_of_speech", "")
         uk = item.get("uk_phonetic", "")
         us = item.get("us_phonetic", "")

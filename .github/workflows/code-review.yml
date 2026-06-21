@@ -1,0 +1,22 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  review:
+    runs-on: [self-hosted, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run AI Code Review
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 .github/scripts/code-review.py

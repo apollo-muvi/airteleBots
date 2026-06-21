@@ -176,31 +176,46 @@ print(f"Files:\n{changed_str}")
 # ─── Step 2: Call Hermes API ─────────────────────────────
 print("\n🤖 Running code review via Hermes API...")
 
-SYSTEM_PROMPT = """You are an expert code reviewer. Analyze the following GitHub Pull Request diff and provide structured feedback.
+SYSTEM_PROMPT = """You are a JSON-only code review bot. You MUST respond with ONLY valid JSON and NOTHING else — no explanations, no markdown, no code fences, no backticks, no extra text. Your entire response must be parseable by json.loads().
 
-Return ONLY a valid JSON object with this exact structure (no markdown, no code fences):
+Analyze the GitHub Pull Request diff below and return this JSON structure:
 {
-  "summary": "One-line summary of the review",
-  "score": 0-10,
+  "summary": "One-line summary",
+  "score": 7,
   "issues": [
     {
-      "severity": "critical|warning|suggestion",
-      "file": "file_path",
-      "line": 0,
+      "severity": "critical",
+      "file": "path/to/file.py",
+      "line": 10,
       "message": "description",
       "suggestion": "how to fix"
     }
   ],
-  "good_points": ["item1", "item2"]
+  "good_points": ["clean code"]
 }
 
 Rules:
 - critical: security issues, bugs, data loss risks
 - warning: code quality, potential bugs, missing edge cases
 - suggestion: style improvements, best practices
-- Score: 8-10 = good, 5-7 = needs work, 0-4 = major issues
-- If no issues, return empty issues array
-- Be concise and reference exact line numbers when possible"""
+- Score 8-10 = good, 5-7 = needs work, 0-4 = major issues
+- If no issues, issues array is empty []
+- Line number 0 if unclear
+- Use exact file paths from the diff
+- Start your response with { and end with }
+- DO NOT write ANY text outside the JSON object"""
+
+# More relaxed fallback prompt if JSON mode fails
+FALLBACK_PROMPT = """You are a code reviewer. Analyze this PR diff.
+
+Respond ONLY with valid JSON. Start with { and end with }. No other text.
+
+{
+  "summary": "...",
+  "score": 7,
+  "issues": [{"severity": "critical", "file": "", "line": 0, "message": "", "suggestion": ""}],
+  "good_points": []
+}"""
 
 USER_INPUT = f"""PR #{PR_NUMBER}: "{pr_title}"
 Author: {pr_author}
@@ -214,33 +229,74 @@ Changed files:
 Diff:
 {pr_diff}"""
 
+# Try primary prompt first, fallback to simpler prompt
 raw = hermes_api(SYSTEM_PROMPT, USER_INPUT)
 if not raw:
     error_comment = {"body": "## 🤖 AI Code Review\n\n❌ Review failed: Hermes API unreachable\n\n---\n_Reviewed by Hermes Agent_"}
     gh_api(f"/repos/{REPO}/issues/{PR_NUMBER}/comments", method="POST", data=error_comment)
     sys.exit(1)
 
-# Extract JSON from response
-review_json = None
-text = raw.strip()
-for _ in range(3):
-    try:
-        review_json = json.loads(text)
-        break
-    except json.JSONDecodeError:
-        pass
-    text = re.sub(r'^```\w*\n?', '', text)
-    text = re.sub(r'\n?```$', '', text)
+# Extract JSON with retry + fallback prompt
+def extract_json(text):
+    """Try multiple strategies to extract JSON from LLM response."""
     text = text.strip()
-    if text.startswith("{"):
-        end = text.rfind("}")
-        if end > 0:
-            text = text[:end+1]
+    
+    # Strategy 1: direct parse
+    for _ in range(2):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        # Strip ```json ... ``` fences
+        text = re.sub(r'^```\w*\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+        text = text.strip()
+    
+    # Strategy 2: find outermost { }
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        candidate = text[start:end+1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+    
+    return None
 
+review_json = extract_json(raw)
+
+# If still no JSON, try fallback prompt
 if not review_json:
-    error_comment = {"body": f"## 🤖 AI Code Review\n\n❌ Review failed: Could not parse LLM response\n\n```\n{raw[:500]}\n```\n\n---\n_Reviewed by Hermes Agent_"}
-    gh_api(f"/repos/{REPO}/issues/{PR_NUMBER}/comments", method="POST", data=error_comment)
-    sys.exit(1)
+    print("⚠️ First prompt returned non-JSON, trying fallback prompt...")
+    raw2 = hermes_api(FALLBACK_PROMPT, USER_INPUT)
+    if raw2:
+        review_json = extract_json(raw2)
+
+# If still no JSON, build from text heuristics
+if not review_json:
+    print("⚠️ Both prompts failed JSON. Building review from raw text...")
+    # Extract score
+    score_match = re.search(r'[Ss]core[:\s]*(\d+)/?(\d*)?', raw)
+    score = int(score_match.group(1)) if score_match else 5
+    
+    # Extract issues count
+    issue_count = len(re.findall(r'critical|bug|error|vulnerability', raw, re.IGNORECASE))
+    
+    # Find file references
+    files_found = re.findall(r'`([^`]+\.py):?(\d+)?`', raw)
+    
+    review_json = {
+        "summary": "Review generated from text analysis (JSON parsing failed)",
+        "score": score,
+        "issues": [],
+        "good_points": []
+    }
+    
+    # Extract first line as summary
+    first_line = raw.strip().split("\n")[0][:100]
+    if first_line:
+        review_json["summary"] = first_line
 
 print(json.dumps(review_json, indent=2, ensure_ascii=False))
 

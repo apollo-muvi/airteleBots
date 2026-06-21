@@ -30,17 +30,19 @@ def _is_authorized(user_id: int) -> bool:
 
 def _format_word_response(data: dict) -> str:
     """Format dictionary data as a nice Telegram message."""
-    word = data.get("word", "")
+    word = data.get("word", "").lower()
     lines = [f"📖 *{word}*\n"]
 
-    # Deduplicate results by definition_en
-    seen_defs = set()
+    # Deduplicate results by part_of_speech — show at most 2 unique POS
+    seen_pos = set()
     unique_results = []
     for item in data.get("results", []):
-        key = item.get("definition_en", "").strip().lower()
-        if key and key not in seen_defs:
-            seen_defs.add(key)
+        pos = item.get("part_of_speech", "").strip().lower()
+        if pos and pos not in seen_pos:
+            seen_pos.add(pos)
             unique_results.append(item)
+    # Safety cap: max 2 results
+    unique_results = unique_results[:2]
 
     for i, item in enumerate(unique_results):
         pos = item.get("part_of_speech", "")

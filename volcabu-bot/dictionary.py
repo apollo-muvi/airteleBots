@@ -13,7 +13,9 @@ Analyze the English word provided by the user and return ONLY a valid JSON objec
 
 Rules:
 - The word may be a single word (e.g. "apple") or a short phrase (e.g. "look up", "break down").
-- If the word has multiple meanings/parts of speech, include ALL of them in the results array.
+- If the word has multiple parts of speech (e.g. noun AND verb), include ONE definition for each.
+- For the SAME part of speech, only provide the MOST COMMON single definition — do NOT list multiple sub-meanings.
+- LIMIT the results array to at most 2 entries maximum.
 - Phonetics should use IPA format inside slashes, e.g. /ˈæp.əl/.
 - Definitions and examples must be natural English.
 - Translations must be in Traditional Chinese (繁體中文).
